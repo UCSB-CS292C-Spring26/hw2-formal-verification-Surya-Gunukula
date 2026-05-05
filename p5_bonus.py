@@ -164,8 +164,21 @@ def verify_buggy_composition():
 # Cursor, Copilot, etc.) or from what you learned in class. What would a runtime monitor need to check to
 # prevent this class of bugs?
 
-# TODO: Write your explanation here as a comment.
-# ...
+
+'''
+In real agent workflows this bug shows up when one tool's output path (like Write) equals another tool's input path (like Bash). 
+If one skill modifies a run script, before another skill calls this run script, this could cause the second skill to run something 
+potentially malicious. It also could just produce the wrong behavior. 
+
+For me, this has happened with Claude Code. Where I made modifications to the run script to change the flags, but a previous 
+Claude Code conversation didn't understand that these files had been changed, so they struggled to run it again. Until they finally
+read the new script. (this could have probably been fixed with prompting, but monitor would be better)
+
+A runtime monitor would need read/write-set provenance per skill: each tool
+declares the paths it will read and write, and the composer flags any later
+write whose target intersects an earlier skill's read-set without an explicit
+"modify in place" intent.
+'''
 # ============================================================================
 
 
