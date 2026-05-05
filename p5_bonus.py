@@ -79,12 +79,19 @@ def verify_correct_composition():
     # TODO: Check that (skill_A_post ∧ skill_B_post) → composed_post is valid.
     # That is, check that the negation is UNSAT.
     s = Solver()
-    # s.add(skill_A_post)
-    # s.add(skill_B_post)
-    # s.add(Not(composed_post))
+    s.add(skill_A_post)
+    s.add(skill_B_post)
+    s.add(Not(composed_post))
 
     # TODO: uncomment and check
-    # result = s.check()
+    result = s.check()
+    
+    if result == unsat:
+        print("  Composition VERIFIED (UNSAT — postcondition is valid).")
+    else:
+        print(f"  Verification FAILED ({result})")
+        if result == sat:
+            print(f"  counterexample: {s.model()}")
 
     print("  TODO: Implement verification")
     print()
@@ -133,7 +140,16 @@ def verify_buggy_composition():
     # TODO: Check that the composed postcondition FAILS.
     # Print the counterexample showing how the input file gets corrupted.
     s = Solver()
-    # s.add(...)
+    s.add(skill_A_post, buggy_B_post, Not(composed_post))
+    
+    result=s.check()
+    
+    if result == unsat:
+        print("  Composition VERIFIED (UNSAT — postcondition is valid).")
+    else:
+        print(f"  Verification FAILED ({result})")
+        if result == sat:
+            print(f"  counterexample: {s.model()}")
 
     print("  TODO: Implement buggy verification")
     print()
