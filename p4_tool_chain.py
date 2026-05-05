@@ -49,11 +49,14 @@ class SandboxMonitor:
     """
 
     def __init__(self):
-        # TODO
-        pass
+        self.violated = False
 
     def step(self, event: ToolEvent) -> str:
-        # TODO
+        if self.violated:
+            return DENY
+        if event.tool == "file_write" and not event.path.startswith(SANDBOX_DIR):
+            self.violated = True
+            return DENY
         return ALLOW
 
 
@@ -73,11 +76,16 @@ class ReadBeforeWriteMonitor:
     """
 
     def __init__(self):
-        # TODO: track which paths have been read
-        pass
+        self.fileReads = []
 
     def step(self, event: ToolEvent) -> str:
-        # TODO
+        if(event.tool == "file_read"):
+            self.fileReads.append(event.path)
+        if(event.tool == "file_write"):
+            for file in self.fileReads:
+                if(file == event.path):
+                    return ALLOW
+            return DENY
         return ALLOW
 
 
@@ -95,11 +103,13 @@ class NoExfilMonitor:
     """
 
     def __init__(self):
-        # TODO
-        pass
+        self.tainted = False
 
     def step(self, event: ToolEvent) -> str:
-        # TODO
+        if(event.tool == "file_read" and event.is_sensitive == True):
+            self.tainted = True
+        if(event.tool == "network_fetch" and self.tainted == True):
+            return DENY
         return ALLOW
 
 
@@ -241,35 +251,50 @@ def part_b():
         """
         Return constraints asserting: there EXISTS a step where
         tool = FILE_WRITE and in_sandbox = False.
-        TODO: Implement.
         """
-        return []  # ← replace
+        K = trace['K']
+        tool = trace['tool']
+        in_sandbox = trace['in_sandbox']
+        return [Or([And(tool[i] == FILE_WRITE, Not(in_sandbox[i])) for i in range(K)])]
 
     # Property 2: Read-before-write — every file_write at step j to path p
     # must have a file_read at some step i < j to the same path p.
     def negate_read_before_write(trace):
         """
-        TODO: Implement. This one is trickier — you need to express that
-        there exists a step j where tool = FILE_WRITE and for ALL i < j,
-        either tool[i] != FILE_READ or path_id[i] != path_id[j].
+        Assert ∃ j. tool[j] = FILE_WRITE ∧ ∀ i < j. ¬(tool[i] = FILE_READ ∧ path_id[i] = path_id[j]).
         """
-        return []  # ← replace
+        K = trace['K']
+        tool = trace['tool']
+        path_id = trace['path_id']
+        clauses = []
+        for j in range(K):
+            no_prior_read = And(
+                [Not(And(tool[i] == FILE_READ, path_id[i] == path_id[j])) for i in range(j)]
+            ) if j > 0 else BoolVal(True)
+            clauses.append(And(tool[j] == FILE_WRITE, no_prior_read))
+        return [Or(clauses)]
 
     # Property 3: No exfiltration — if file_read at step i is sensitive,
     # then no network_fetch at any step j > i.
     def negate_no_exfil(trace):
         """
-        TODO: Implement.
+        Assert ∃ i < j. tool[i] = FILE_READ ∧ is_sensitive[i] ∧ tool[j] = NETWORK_FETCH.
         """
-        return []  # ← replace
+        K = trace['K']
+        tool = trace['tool']
+        is_sensitive = trace['is_sensitive']
+        return [Or([
+            And(tool[i] == FILE_READ, is_sensitive[i], tool[j] == NETWORK_FETCH)
+            for i in range(K) for j in range(i + 1, K)
+        ])]
 
     verify_property_bounded("Sandbox", K, negate_sandbox)
     verify_property_bounded("Read-before-write", K, negate_read_before_write)
     verify_property_bounded("No-exfiltration", K, negate_no_exfil)
 
-    # [EXPLAIN] in a comment:
-    # Compare the DFA monitor approach (Part a) with the Z3 bounded approach:
-    # What does each one catch that the other might miss?
+# [EXPLAIN] The DFA monitor approach catches runtime violations. So, if a trace has ran/is running the monitor can catch that.
+# The Z3 bounded approach finds out if it is POSSIBLE for a violation to occur, which isn't caught by a runtime check 
+# Z3 exhaustively checks all possibilities
 
 
 # ============================================================================
@@ -297,10 +322,15 @@ def part_c():
     """
     print("=== Part (c): Monitor Completeness ===\n")
 
-    # TODO: Define your trace
+    # 6-step trace: read a secret, launder it into a sandbox log via legitimate
+    # writes, then exfiltrate via shell_exec. Every step passes all three monitors.
     trace = [
-        # ToolEvent(...),
-        # ...
+        ToolEvent("file_read",  "/project/secrets/api_key.txt", True),   # sensitive read taints NoExfilMonitor (only blocks network_fetch)
+        ToolEvent("file_read",  "/project/output.log",          False),  # required to satisfy ReadBeforeWriteMonitor for next step
+        ToolEvent("file_write", "/project/output.log",          False),  # secret laundered into a non-sensitive sandbox file
+        ToolEvent("file_read",  "/project/output.log",          False),
+        ToolEvent("file_write", "/project/output.log",          False),
+        ToolEvent("shell_exec", "/project/upload.sh",           False),  # exfiltrates output.log; shell_exec is not network_fetch
     ]
 
     cm = ComposedMonitor()
@@ -313,7 +343,17 @@ def part_c():
             all_allowed = False
 
     print(f"\n  All allowed: {all_allowed}")
-    # [EXPLAIN] in a comment: what property does this trace violate and why?
+    # [EXPLAIN]
+    # 1. Property violated: confidentiality — sensitive content from /project/secrets/api_key.txt
+    #    is exfiltrated via shell_exec at step 6 (e.g., the script curls upload.evil.com).
+    # 2. The monitors miss it because each one is single-event and syntactic:
+    #      - SandboxMonitor inspects only file_write paths.
+    #      - ReadBeforeWriteMonitor inspects only file_write provenance, not data flow.
+    #      - NoExfilMonitor blocks the literal network_fetch tool, not shell_exec.
+    #    None of them tracks taint propagation or the semantics of shell commands.
+    # 3. Add a TaintFlowMonitor: mark any path written to after a sensitive read as
+    #    tainted, and deny shell_exec / network_fetch involving any tainted path; or
+    #    simply extend NoExfilMonitor to deny shell_exec after a sensitive read too.
     print()
 
 

@@ -122,9 +122,9 @@ def bexp_to_z3(e: BExp) -> BoolRef:
             lz, rz = aexp_to_z3(l), aexp_to_z3(r)
             return {'<': lz < rz, '<=': lz <= rz, '>': lz > rz,
                     '>=': lz >= rz, '==': lz == rz, '!=': lz != rz}[op]
-        case ImpNot(inner):  return z3.Not(bexp_to_z3(inner))
-        case ImpAnd(l, r):   return z3.And(bexp_to_z3(l), bexp_to_z3(r))
-        case ImpOr(l, r):    return z3.Or(bexp_to_z3(l), bexp_to_z3(r))
+        case ImpNot(inner):  return Not(bexp_to_z3(inner))
+        case ImpAnd(l, r):   return And(bexp_to_z3(l), bexp_to_z3(r))
+        case ImpOr(l, r):    return Or(bexp_to_z3(l), bexp_to_z3(r))
         case _: raise ValueError(f"Unknown BExp: {e}")
 
 def z3_substitute_var(formula: ExprRef, var_name: str, replacement: ArithRef) -> ExprRef:
@@ -138,41 +138,51 @@ def z3_substitute_var(formula: ExprRef, var_name: str, replacement: ArithRef) ->
 
 side_vcs: list[tuple[str, BoolRef]] = []
 
+
+def _vc_valid(phi: BoolRef) -> bool:
+    s = Solver()
+    s.add(Not(phi))
+    return s.check() == unsat
+
+
 def wp(stmt: Stmt, Q: BoolRef) -> BoolRef:
     """
     Compute the weakest precondition of `stmt` w.r.t. postcondition `Q`.
     For while loops, append side VCs to the global `side_vcs` list.
-
-    TODO: Implement all six cases.
     """
     global side_vcs
 
     match stmt:
         case Assign(var, expr):
-            # TODO: Q[var ↦ expr]
-            pass
+            return z3_substitute_var(Q, var, aexp_to_z3(expr))
 
         case Seq(s1, s2):
-            # TODO
-            pass
+            return wp(s1, wp(s2, Q))
 
         case If(cond, s1, s2):
-            # TODO
-            pass
+            c = bexp_to_z3(cond)
+            return And(
+                Implies(c, wp(s1, Q)),
+                Implies(Not(c), wp(s2, Q)),
+            )
 
         case While(cond, inv, body):
-            # TODO: Return I. Generate two side VCs:
-            #   preservation: I ∧ b → wp(body, I)
-            #   postcondition: I ∧ ¬b → Q
-            pass
+            I = bexp_to_z3(inv)
+            c = bexp_to_z3(cond)
+            body_wp = wp(body, I)
+            side_vcs.append(
+                ("preservation", Implies(And(I, c), body_wp))
+            )
+            side_vcs.append(
+                ("postcondition", Implies(And(I, Not(c)), Q))
+            )
+            return I
 
         case Assert(cond):
-            # TODO
-            pass
+            return And(bexp_to_z3(cond), Q)
 
         case Assume(cond):
-            # TODO
-            pass
+            return Implies(bexp_to_z3(cond), Q)
 
         case _:
             raise ValueError(f"Unknown statement: {stmt}")
@@ -181,10 +191,7 @@ def wp(stmt: Stmt, Q: BoolRef) -> BoolRef:
 def verify(pre: BExp, stmt: Stmt, post: BExp, label: str = "Program"):
     """
     Verify the Hoare triple {pre} stmt {post}.
-    1. Clear side_vcs.  2. Compute wp.  3. Check pre → wp is valid.
-    4. Check each side VC.  5. Print results.
-
-    TODO: Implement this function.
+    Clears side_vcs, computes wp, checks pre → wp and each side VC.
     """
     global side_vcs
     side_vcs = []
@@ -192,9 +199,20 @@ def verify(pre: BExp, stmt: Stmt, post: BExp, label: str = "Program"):
     pre_z3 = bexp_to_z3(pre)
     post_z3 = bexp_to_z3(post)
 
-    # TODO
+    w = wp(stmt, post_z3)
+    main_vc = Implies(pre_z3, w)
+
     print(f"=== {label} ===")
-    print("  TODO: implement verify()")
+    main_ok = _vc_valid(main_vc)
+    print(f"  main VC (pre → wp): {'OK' if main_ok else 'FAIL'}")
+
+    all_ok = main_ok
+    for name, vc in side_vcs:
+        ok = _vc_valid(vc)
+        print(f"  side VC [{name}]: {'OK' if ok else 'FAIL'}")
+        all_ok = all_ok and ok
+
+    print(f"  Overall: {'VERIFIED' if all_ok else 'NOT VERIFIED'}")
     print()
 
 
@@ -232,19 +250,18 @@ def test_abs():
 # [EXPLAIN] in a comment how you found each invariant and why it works.
 # ============================================================================
 
+# [EXPLAIN] For invariants I follow a general rule which is what equation in the loop holds at all times and then add one more than what the conditional is.
+# So, this is r = i * b & i <= a
+# This works because for i=0, r=0 this holds. Then if you add the guard of and i < a. 
+# Then the wp(stmt, I) is just r = i * b & i + 1 <= a. You know that i < a. so i + 1 <= a
+# Also, the post-condition is met because its r = i * b & i = a so r = a * b
 def test_mult():
-    """
-    Program C1 — Multiplication by addition:
-      { a >= 0 }
-      i := 0; r := 0;
-      while i < a  invariant ???  do
-        r := r + b;  i := i + 1;
-      { r == a * b }
-
-    TODO: Replace the invariant below with a correct one.
-    """
+    """C1: multiplication by repeated addition."""
     pre = Compare('>=', Var('a'), IntConst(0))
-    inv = BoolConst(True)  # ← WRONG — replace with correct invariant
+    inv = ImpAnd(
+        Compare('==', Var('r'), BinOp('*', Var('i'), Var('b'))),
+        Compare('<=', Var('i'), Var('a')),
+    )
     body = Seq(Assign('r', BinOp('+', Var('r'), Var('b'))),
                Assign('i', BinOp('+', Var('i'), IntConst(1))))
     stmt = Seq(Assign('i', IntConst(0)),
@@ -254,6 +271,11 @@ def test_mult():
     verify(pre, stmt, post, "C1: Multiplication by Addition")
 
 
+# [EXPLAIN] For invariants I follow a general rule which is what equation in the loop holds at all times and then add one more than what the conditional is.
+# So, this is r = n + i & i <= m
+# This works because for i=0, r=n this holds. Then if you add the guard of and i < m.
+# Then the wp(stmt, I) is just r = n + i & i + 1 <= m. You know that i < m. so i + 1 <= m
+# Also, the post-condition is met because its r = n + i & i = m so r = n + m
 def test_add():
     """
     Program C2 — Addition by loop:
@@ -267,7 +289,10 @@ def test_add():
     """
     pre = ImpAnd(Compare('>=', Var('n'), IntConst(0)),
                  Compare('>=', Var('m'), IntConst(0)))
-    inv = BoolConst(True)  # ← WRONG — replace with correct invariant
+    inv = ImpAnd(
+        Compare('==', Var('r'), BinOp('+', Var('n'), Var('i'))),
+        Compare('<=', Var('i'), Var('m'))
+    )
     body = Seq(Assign('r', BinOp('+', Var('r'), IntConst(1))),
                Assign('i', BinOp('+', Var('i'), IntConst(1))))
     stmt = Seq(Assign('i', IntConst(0)),
@@ -277,6 +302,11 @@ def test_add():
     verify(pre, stmt, post, "C2: Addition by Loop")
 
 
+# [EXPLAIN] For invariants I follow a general rule which is what equation in the loop holds at all times and then add one more than what the conditional is.
+# So, this is 2 * s = i * (i - 1) & i <= n + 1
+# This works because for i=1, s=0 this holds. Then if you add the guard of and i <= n.
+# Then the wp(stmt, I) is just 2 * s = i * (i - 1) & i + 1 <= n + 1. You know that i <= n. so i + 1 <= n + 1
+# Also, the post-condition is met because its 2 * s = i * (i - 1) & i = n + 1 so 2 * s = n * (n + 1)
 def test_sum():
     """
     Program C3 — Sum of 1..n:
@@ -289,7 +319,14 @@ def test_sum():
     TODO: Replace the invariant below with a correct one.
     """
     pre = Compare('>=', Var('n'), IntConst(1))
-    inv = BoolConst(True)  # ← WRONG — replace with correct invariant
+    inv = ImpAnd(
+        Compare(
+            '==',
+            BinOp('*', IntConst(2), Var('s')),
+            BinOp('*', Var('i'), BinOp('-', Var('i'), IntConst(1))),
+        ),
+        Compare('<=', Var('i'), BinOp('+', Var('n'), IntConst(1))),
+    )
     body = Seq(Assign('s', BinOp('+', Var('s'), Var('i'))),
                Assign('i', BinOp('+', Var('i'), IntConst(1))))
     stmt = Seq(Assign('i', IntConst(1)),
@@ -325,31 +362,39 @@ def test_buggy_div():
     pre = ImpAnd(Compare('>=', Var('x'), IntConst(0)),
                  Compare('>', Var('y'), IntConst(0)))
 
-    # BUGGY invariant — intentionally too weak
-    inv_buggy = Compare('==',
+    inv_buggy = Compare(
+        '==',
         BinOp('+', BinOp('*', Var('q'), Var('y')), Var('r')),
-        Var('x'))
+        Var('x'),
+    )
 
     body = Seq(Assign('r', BinOp('-', Var('r'), Var('y'))),
                Assign('q', BinOp('+', Var('q'), IntConst(1))))
-    stmt = Seq(Assign('q', IntConst(0)),
-               Seq(Assign('r', Var('x')),
-                   While(Compare('>=', Var('r'), Var('y')),
-                         inv_buggy, body)))
+    stmt_buggy = Seq(Assign('q', IntConst(0)),
+                     Seq(Assign('r', Var('x')),
+                         While(Compare('>=', Var('r'), Var('y')),
+                               inv_buggy, body)))
+
     post = ImpAnd(Compare('==',
                        BinOp('+', BinOp('*', Var('q'), Var('y')), Var('r')),
                        Var('x')),
                   ImpAnd(Compare('>=', Var('r'), IntConst(0)),
                          Compare('<', Var('r'), Var('y'))))
 
-    verify(pre, stmt, post, "Buggy Division (should FAIL)")
+    verify(pre, stmt_buggy, post, "Buggy Division (should FAIL)")
 
-    # TODO: Uncomment and fix the invariant below, then re-verify.
-    # inv_fixed = ImpAnd(
-    #     Compare('==', BinOp('+', BinOp('*', Var('q'), Var('y')), Var('r')), Var('x')),
-    #     ???  # ← Add the missing conjunct
-    # )
-    # ... rebuild stmt with inv_fixed and call verify(...)
+    # [EXPLAIN] e.g. x=5, y=3: invariant holds for q=2, r=-1 since q*y+r=x, but post needs r>=0.
+
+    inv_fixed = ImpAnd(
+        Compare('==', BinOp('+', BinOp('*', Var('q'), Var('y')), Var('r')), Var('x')),
+        Compare('>=', Var('r'), IntConst(0)),
+    )
+    stmt_fixed = Seq(Assign('q', IntConst(0)),
+                     Seq(Assign('r', Var('x')),
+                         While(Compare('>=', Var('r'), Var('y')),
+                               inv_fixed, body)))
+
+    verify(pre, stmt_fixed, post, "Division (fixed invariant)")
 
 
 # ============================================================================
@@ -375,27 +420,33 @@ def test_wp_derivation():
     """
     print("=== Part (a): WP Derivation ===")
 
-    # TODO: Build the IMP AST for the program above
-    # stmt = Seq(Assign('x', ...), If(...))
-    # post = Compare('>', Var('y'), IntConst(0))
+    stmt = Seq(
+        Assign('x', BinOp('+', Var('x'), IntConst(1))),
+        If(
+            Compare('>', Var('x'), IntConst(0)),
+            Assign('y', BinOp('*', Var('x'), IntConst(2))),
+            Assign('y', BinOp('-', IntConst(0), Var('x'))),
+        ),
+    )
+    post = Compare('>', Var('y'), IntConst(0))
 
     # TODO: Compute wp(stmt, post_z3) and print it
-    # wp_result = wp(stmt, bexp_to_z3(post))
-    # print(f"  wp = {wp_result}")
+
+    wp_result = wp(stmt, bexp_to_z3(post))
+    print(f"  wp = {wp_result}")
 
     # TODO: For each candidate precondition, check if pre → wp is valid
-    # candidates = [
-    #     ("x >= 0",  z3_var('x') >= 0),
-    #     ("x >= -1", z3_var('x') >= -1),
-    #     ("x == -1", z3_var('x') == -1),
-    # ]
-    # for name, pre in candidates:
-    #     s = Solver()
-    #     s.add(Not(Implies(pre, wp_result)))
-    #     result = s.check()
-    #     valid = (result == unsat)
-    #     print(f"  {name}: {'VALID' if valid else 'INVALID'}")
-    #     # [EXPLAIN] in a comment: why is this precondition valid or invalid?
+    candidates = [
+        ("x >= 0",  z3_var('x') >= 0), #[EXPLAIN]: This is valid because the wp simplifies to x != 1 and this is a just a stronger precondition then that. 
+        ("x >= -1", z3_var('x') >= -1), #[EXPLAIN]: This is invalid because the precondition should be x != -1, so having greater than equal to isn't valid
+        ("x == -1", z3_var('x') == -1), #[EXPLAIN]: This is invalid because again the precondition should be x != -1, so this isn't valid. 
+    ]
+    for name, pre in candidates:
+        s = Solver()
+        s.add(Not(Implies(pre, wp_result)))
+        result = s.check()
+        valid = (result == unsat)
+        print(f"  {name}: {'VALID' if valid else 'INVALID'}")
 
     print("  TODO: implement after Part (b)")
     print()

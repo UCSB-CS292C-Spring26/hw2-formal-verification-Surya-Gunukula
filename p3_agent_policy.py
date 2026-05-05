@@ -66,12 +66,59 @@ def make_policy():
     r = Const('r', Resource)
     t = Int('t')
 
-    constraints = []
+    r1 = And(role(u) == VIEWER, t == FILE_READ, Not(is_sensitive(r)))
+    r2 = And(role(u) == DEVELOPER, 
+        Or(
+          t == FILE_READ,
+          And(t == FILE_WRITE, Or(owner(r) == u, in_sandbox(r))),
+          And(t == NETWORK_FETCH, in_sandbox(r))  
+        ),
+    )
+    r3 = And(
+        role(u) == ADMIN,
+        Or(
+            t == FILE_READ, 
+            t == FILE_WRITE, 
+            And(t == SHELL_EXEC, Not(is_sensitive(r))),
+            And(t == NETWORK_FETCH, in_sandbox(r))
+        ),
+    )
+    
+    axiom = ForAll([u, t, r], allowed(u, t, r) == Or(r1, r2, r3))
+    constraints = [axiom]
+
 
     # TODO: Encode R1–R5
     # Hint: Start with a default-deny rule, then add exceptions.
 
     return constraints
+
+
+def make_policy_without_r4():
+    u = Const('u', User)
+    r = Const('r', Resource)
+    t = Int('t')
+
+    r1 = And(role(u) == VIEWER, t == FILE_READ, Not(is_sensitive(r)))
+    r2 = And(role(u) == DEVELOPER,
+        Or(
+          t == FILE_READ,
+          And(t == FILE_WRITE, Or(owner(r) == u, in_sandbox(r))),
+          And(t == NETWORK_FETCH, in_sandbox(r))
+        ),
+    )
+    r3 = And(
+        role(u) == ADMIN,
+        Or(
+            t == FILE_READ,
+            t == FILE_WRITE,
+            t == SHELL_EXEC,
+            And(t == NETWORK_FETCH, in_sandbox(r))
+        ),
+    )
+
+    axiom = ForAll([u, t, r], allowed(u, t, r) == Or(r1, r2, r3))
+    return [axiom]
 
 
 # ============================================================================
@@ -81,7 +128,7 @@ def make_policy():
 def query(description, policy, extra):
     """Helper: check if extra constraints are SAT under the policy."""
     s = Solver()
-    s.add(policy)
+    s.add(*policy)
     s.add(extra)
     result = s.check()
     print(f"  {description}")
@@ -107,16 +154,41 @@ def part_b():
     r = Const('r', Resource)
 
     # Q1: Can a developer write to a sensitive file they don't own, in the sandbox?
-    # TODO
+    extra_1 = And(
+        role(u) == DEVELOPER, 
+        allowed(u, FILE_WRITE, r),
+        is_sensitive(r),
+        owner(r) != u, 
+        in_sandbox(r)
+    )
+    query("Can a developer write to a sensitive file they don't own, in the sandbox?", policy, extra_1)
+    #[EXPLAIN] This is the second rule, where if its in a sandbox a developer can write to it. 
 
     # Q2: Can an admin network_fetch a resource outside the sandbox?
-    # TODO
+    extra_2 = And(
+        role(u) == ADMIN, 
+        allowed(u, NETWORK_FETCH, r),
+        Not(in_sandbox(r))
+    )
+    query("Q2: Can an admin network_fetch a resource outside the sandbox?", policy, extra_2)
+    #[EXPLAIN] This is the fifth rule where network_fetch can only be used for sandboxed resources
 
     # Q3: Is there ANY role that can shell_exec on a sensitive resource?
-    # TODO
+    extra_3 = And(
+        is_sensitive(r),
+        allowed(u, SHELL_EXEC, r)
+    )
+    query("Is there ANY role that can shell_exec on a sensitive resource?", policy, extra_3)
+    #[EXPLAIN] This is the fourth rule where nobody can shell_exec on sensitive resources
 
-    # Q4: [EXPLAIN] in a comment Remove R4 — what dangerous action becomes possible?
-    # TODO: Create a modified policy without R4, demonstrate the new capability.
+    policy_no_r4 = make_policy_without_r4()
+    extra_4 = And(
+        role(u) == ADMIN,
+        is_sensitive(r),
+        allowed(u, SHELL_EXEC, r),
+    )
+    query("Q4: without R4 — can an admin shell_exec on a sensitive resource?", policy_no_r4, extra_4)
+    #[EXPLAIN] Without R4 the admin branch allows shell_exec on sensitive resources too, so Q4 is SAT and the model shows that dangerous action.
 
 
 # ============================================================================
@@ -151,12 +223,63 @@ def part_c():
     """
     print("=== Part (c): Privilege Escalation ===\n")
 
-    # TODO: Your encoding here.
     # Hint: Use is_sensitive_before and is_sensitive_after as two separate
     # functions, or use a time-indexed model.
 
-    print("  TODO: Implement escalation analysis")
+    is_sensitive_before = Function('is_sensitive_before', Resource, BoolSort())
+    is_sensitive_after  = Function('is_sensitive_after',  Resource, BoolSort())
+
+    u  = Const('u',  User)
+    r1 = Const('r1', Resource)  # the sandbox resource the dev shell_execs first
+    r2 = Const('r2', Resource)  # the previously-sensitive target the attack unlocks
+
+    # R6 at step 1: developer shell_execs r1 using the BEFORE state of is_sensitive.
+    step1_allowed = And(
+        role(u) == DEVELOPER,
+        Not(is_sensitive_before(r1)),
+        in_sandbox(r1),
+    )
+
+    # R6 at step 2: developer shell_execs r2 using the AFTER state of is_sensitive
+    # (step 1 mutated r2's flag from sensitive → non-sensitive).
+    step2_allowed = And(
+        role(u) == DEVELOPER,
+        Not(is_sensitive_after(r2)),
+        in_sandbox(r2),
+    )
+
+    attack = And(
+        r1 != r2,
+        is_sensitive_before(r2),       # r2 used to be sensitive (R4 should protect it)
+        Not(is_sensitive_after(r2)),   # but step 1 stripped that flag
+        step1_allowed,
+        step2_allowed,
+    )
+
+    s = Solver()
+    s.add(attack)
+    res = s.check()
+    print(f"  Escalation reachable? → {res}")
+    if res == sat:
+        print(f"    Model: {s.model()}")
     print()
+
+    # Fix: sensitivity is monotone — once sensitive, always sensitive.
+    r = Const('r', Resource)
+    fix = ForAll([r], Implies(is_sensitive_before(r), is_sensitive_after(r)))
+
+    s2 = Solver()
+    s2.add(attack, fix)
+    res2 = s2.check()
+    print(f"  With monotone-sensitivity fix → {res2}")
+    if res2 == unsat:
+        print("  ESCALATION BLOCKED")
+    print()
+
+    # [EXPLAIN] R6 only checks the current is_sensitive flag, so step 1's mutation
+    # can clear that flag and let step 2 shell_exec a previously-sensitive resource.
+    # The fix asserts is_sensitive is monotone (it can only become MORE restricted),
+    # which makes is_sensitive_before(r2) ∧ ¬is_sensitive_after(r2) unsatisfiable.
 
 
 # ============================================================================

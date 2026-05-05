@@ -15,8 +15,7 @@ def part_a():
     x, y, z = Ints('x y z')
     s = Solver()
 
-    # TODO: Add constraints
-    # s.add(...)
+    s.add(z == x + 2*y, x > 0, y > 0, z > 10)
 
     print("=== Part (a) ===")
     if s.check() == sat:
@@ -36,8 +35,7 @@ def part_b():
     x = Int('x')
     s = Solver()
 
-    # TODO: Add the *negation* of the formula and check UNSAT
-    # s.add(...)
+    s.add(Not(ForAll([x], Implies(x > 5, x > 3))))
 
     print("=== Part (b) ===")
     result = s.check()
@@ -67,8 +65,7 @@ def part_c():
     f = Function('f', S, S)
     s = Solver()
 
-    # TODO: Add the three constraints
-    # s.add(...)
+    s.add(f(f(x)) == x, f(f(f(x))) == x, Not(f(x) == x))
 
     print("=== Part (c) ===")
     result = s.check()
@@ -76,7 +73,22 @@ def part_c():
         print(f"SAT: {s.model()}")
     else:
         print("UNSAT")
-    # TODO: Add Z3 derivation steps below (see STEP 2 above).
+
+    # Step 2: validity = ¬φ unsat (same symbols S, x, f as above).
+    def check(msg, phi):
+        t = Solver()
+        t.add(Not(phi))
+        print(f"{msg}: {'holds' if t.check() == unsat else 'fails'}")
+
+    print("Derivation (congruence then chain with f(f(f(x))) = x):")
+    check(
+        "  (1) f(f(x)) = x ⇒ f(f(f(x))) = f(x)",
+        Implies(f(f(x)) == x, f(f(f(x))) == f(x)),
+    )
+    check(
+        "  (2) f(f(x)) = x ∧ f(f(f(x))) = x ⇒ f(x) = x",
+        Implies(And(f(f(x)) == x, f(f(f(x))) == x), f(x) == x),
+    )
     print()
 
 
@@ -98,19 +110,21 @@ def part_d():
 
     # Axiom 1: Read-over-write HIT
     s1 = Solver()
-    # TODO: Negate axiom 1 and check UNSAT
-    # s1.add(...)
+    s1.add(Not(ForAll([a, i, j, v], Implies(i == j, Select(Store(a, i, v), j) == v))))
     r1 = s1.check()
     print(f"Axiom 1 (hit):  {'Valid' if r1 == unsat else 'INVALID'}")
 
     # Axiom 2: Read-over-write MISS
     s2 = Solver()
-    # TODO: Negate axiom 2 and check UNSAT
-    # s2.add(...)
+    s2.add(Not(ForAll([a, i, j, v], Implies(i != j, Select(Store(a, i, v), j) == Select(a, j)))))
     r2 = s2.check()
     print(f"Axiom 2 (miss): {'Valid' if r2 == unsat else 'INVALID'}")
     print()
 
+
+# EXPLAIN: After an arbitrary Store(a, i, v), when you read at an arbitrary j, there are only two options. 
+# You either read at where was written (i=j) or not (i!=j). So, if you prove both branches you have exhaustively checked 
+# Store/Select behavior. 
 
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
