@@ -237,12 +237,7 @@ def verify_property_bounded(name, K, prop_negation_fn):
 
 
 def part_b():
-    """
-    For each of the three properties, encode the NEGATION and use Z3 to
-    find a violating trace (or prove none exists).
-
-    TODO: Implement the negation functions for each property.
-    """
+    """Encode negations of all three properties and use Z3 to find violating traces."""
     K = 8
     print(f"=== Part (b): Bounded Trace Verification (K={K}) ===\n")
 
@@ -310,16 +305,7 @@ def part_b():
 # ============================================================================
 
 def part_c():
-    """
-    TODO: Construct a trace (list of ToolEvent) of length 6 that passes
-    the ComposedMonitor but is still dangerous.
-
-    Hint: Think about what the three monitors DON'T check. For example:
-    - Do they check how many times a tool is called?
-    - Do they check if shell_exec runs a dangerous command?
-    - Do they check if a file is read, modified, then the modified version
-      is sent over the network?
-    """
+    """Construct a 6-step trace that passes all monitors but is still dangerous."""
     print("=== Part (c): Monitor Completeness ===\n")
 
     # 6-step trace: read a secret, launder it into a sandbox log via legitimate

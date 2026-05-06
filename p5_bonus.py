@@ -42,8 +42,6 @@ OUTPUT_FILE = 1
 #   ∧ Select(fs_final, OUTPUT_FILE) = result_content               [output written]
 #   ∧ ∀p. p ≠ OUTPUT_FILE → Select(fs_final, p) = Select(fs_initial, p)
 #                                                                  [nothing else changed]
-#
-# TODO: Encode this as a Z3 validity check and verify it.
 # ============================================================================
 
 def verify_correct_composition():
@@ -76,14 +74,11 @@ def verify_correct_composition():
                             Select(fs_final, p) == Select(fs_initial, p)))
     )
 
-    # TODO: Check that (skill_A_post ∧ skill_B_post) → composed_post is valid.
-    # That is, check that the negation is UNSAT.
     s = Solver()
     s.add(skill_A_post)
     s.add(skill_B_post)
     s.add(Not(composed_post))
 
-    # TODO: uncomment and check
     result = s.check()
     
     if result == unsat:
@@ -93,7 +88,6 @@ def verify_correct_composition():
         if result == sat:
             print(f"  counterexample: {s.model()}")
 
-    print("  TODO: Implement verification")
     print()
 
 
@@ -107,8 +101,6 @@ def verify_correct_composition():
 #   ∧ ∀p. p ≠ INPUT_FILE → Select(fs_final, p) = Select(fs_after_A, p)
 #
 # The composed postcondition should FAIL because the input file is modified.
-#
-# TODO: Encode this and show the counterexample.
 # ============================================================================
 
 def verify_buggy_composition():
@@ -137,8 +129,6 @@ def verify_buggy_composition():
                             Select(fs_final, p) == Select(fs_initial, p)))
     )
 
-    # TODO: Check that the composed postcondition FAILS.
-    # Print the counterexample showing how the input file gets corrupted.
     s = Solver()
     s.add(skill_A_post, buggy_B_post, Not(composed_post))
     
@@ -151,7 +141,6 @@ def verify_buggy_composition():
         if result == sat:
             print(f"  counterexample: {s.model()}")
 
-    print("  TODO: Implement buggy verification")
     print()
 
 
@@ -174,9 +163,8 @@ For me, this has happened with Claude Code. Where I made modifications to the ru
 Claude Code conversation didn't understand that these files had been changed, so they struggled to run it again. Until they finally
 read the new script. (this could have probably been fixed with prompting, but monitor would be better)
 
-A runtime monitor would need read/write-set provenance per skill: each tool
-declares the paths it will read and write, and the composer flags any later
-write whose target intersects an earlier skill's read-set without an explicit
+A runtime monitor would need read/write-set provenance per skill: each tool declares the paths it will read and write, and 
+the composer flags any later write whose target intersects an earlier skill's read-set without an explicit
 "modify in place" intent.
 '''
 # ============================================================================

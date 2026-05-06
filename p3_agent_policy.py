@@ -53,15 +53,7 @@ allowed = Function('allowed', User, IntSort(), Resource, BoolSort())
 # ============================================================================
 
 def make_policy():
-    """
-    Return a list of Z3 constraints encoding rules R1–R5.
-
-    TODO: Implement this. You need to think about:
-    1. How to express "viewers may ONLY do X" (everything else is denied).
-    2. How R4 overrides R3 for admins.
-    3. Whether you need a closed-world assumption (if not explicitly
-       allowed, it's denied).
-    """
+    """Return a list of Z3 constraints encoding rules R1–R5."""
     u = Const('u', User)
     r = Const('r', Resource)
     t = Int('t')
@@ -85,13 +77,7 @@ def make_policy():
     )
     
     axiom = ForAll([u, t, r], allowed(u, t, r) == Or(r1, r2, r3))
-    constraints = [axiom]
-
-
-    # TODO: Encode R1–R5
-    # Hint: Start with a default-deny rule, then add exceptions.
-
-    return constraints
+    return [axiom]
 
 
 def make_policy_without_r4():
@@ -141,12 +127,7 @@ def query(description, policy, extra):
 
 
 def part_b():
-    """
-    Answer the four queries from the README.
-    For query 4, also demonstrate what becomes possible without R4.
-
-    TODO: Implement each query.
-    """
+    """Answer the four queries from the README. For Q4, show what becomes possible without R4."""
     policy = make_policy()
     print("=== Part (b): Policy Queries ===\n")
 
@@ -206,21 +187,7 @@ def part_b():
 # ============================================================================
 
 def part_c():
-    """
-    TODO:
-    1. Add rule R6 to the policy.
-    2. Model a 2-step trace:
-       - Step 1: developer calls shell_exec on resource r1
-         (r1 is non-sensitive and in sandbox — allowed by R6)
-         Side-effect: this command changes resource r2 from sensitive to
-         non-sensitive (e.g., modifying an access-control config)
-       - Step 2: developer calls shell_exec on resource r2
-         (r2 is NOW non-sensitive — was it allowed before? is it allowed now?)
-    3. The twist: r2's sensitivity changes BETWEEN steps. Encode this by
-       using two copies of is_sensitive (before and after).
-    4. Check if the developer can effectively access a previously-sensitive resource.
-    5. [EXPLAIN] in a comment: Propose and implement a fix.
-    """
+    """Model a 2-step privilege escalation trace using R6 and two copies of is_sensitive."""
     print("=== Part (c): Privilege Escalation ===\n")
 
     # Hint: Use is_sensitive_before and is_sensitive_after as two separate

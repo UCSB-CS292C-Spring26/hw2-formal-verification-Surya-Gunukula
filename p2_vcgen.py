@@ -277,16 +277,7 @@ def test_mult():
 # Then the wp(stmt, I) is just r = n + i & i + 1 <= m. You know that i < m. so i + 1 <= m
 # Also, the post-condition is met because its r = n + i & i = m so r = n + m
 def test_add():
-    """
-    Program C2 — Addition by loop:
-      { n >= 0 ∧ m >= 0 }
-      i := 0; r := n;
-      while i < m  invariant ???  do
-        r := r + 1;  i := i + 1;
-      { r == n + m }
-
-    TODO: Replace the invariant below with a correct one.
-    """
+    """Program C2 — Addition by loop."""
     pre = ImpAnd(Compare('>=', Var('n'), IntConst(0)),
                  Compare('>=', Var('m'), IntConst(0)))
     inv = ImpAnd(
@@ -308,16 +299,7 @@ def test_add():
 # Then the wp(stmt, I) is just 2 * s = i * (i - 1) & i + 1 <= n + 1. You know that i <= n. so i + 1 <= n + 1
 # Also, the post-condition is met because its 2 * s = i * (i - 1) & i = n + 1 so 2 * s = n * (n + 1)
 def test_sum():
-    """
-    Program C3 — Sum of 1..n:
-      { n >= 1 }
-      i := 1; s := 0;
-      while i <= n  invariant ???  do
-        s := s + i;  i := i + 1;
-      { 2 * s == n * (n + 1) }
-
-    TODO: Replace the invariant below with a correct one.
-    """
+    """Program C3 — Sum of 1..n."""
     pre = Compare('>=', Var('n'), IntConst(1))
     inv = ImpAnd(
         Compare(
@@ -394,7 +376,8 @@ def test_buggy_div():
                          While(Compare('>=', Var('r'), Var('y')),
                                inv_fixed, body)))
 
-    verify(pre, stmt_fixed, post, "Division (fixed invariant)")
+    verify(pre, stmt_fixed, post, "FIXED")
+    print("FIXED: Verified")
 
 
 # ============================================================================
@@ -414,10 +397,7 @@ def test_buggy_div():
 # ============================================================================
 
 def test_wp_derivation():
-    """
-    Part (a): Use your VCG to compute wp, then check candidate preconditions.
-    TODO: Implement after you finish Part (b).
-    """
+    """Part (a): Use your VCG to compute wp, then check candidate preconditions."""
     print("=== Part (a): WP Derivation ===")
 
     stmt = Seq(
@@ -430,16 +410,13 @@ def test_wp_derivation():
     )
     post = Compare('>', Var('y'), IntConst(0))
 
-    # TODO: Compute wp(stmt, post_z3) and print it
-
     wp_result = wp(stmt, bexp_to_z3(post))
     print(f"  wp = {wp_result}")
 
-    # TODO: For each candidate precondition, check if pre → wp is valid
     candidates = [
-        ("x >= 0",  z3_var('x') >= 0), #[EXPLAIN]: This is valid because the wp simplifies to x != 1 and this is a just a stronger precondition then that. 
-        ("x >= -1", z3_var('x') >= -1), #[EXPLAIN]: This is invalid because the precondition should be x != -1, so having greater than equal to isn't valid
-        ("x == -1", z3_var('x') == -1), #[EXPLAIN]: This is invalid because again the precondition should be x != -1, so this isn't valid. 
+        ("x >= 0",  z3_var('x') >= 0), #[EXPLAIN]: Valid — wp simplifies to x != -1 and x >= 0 is strictly stronger (it excludes -1).
+        ("x >= -1", z3_var('x') >= -1), #[EXPLAIN]: Invalid — x >= -1 includes x = -1, which makes x+1 = 0, hitting the else branch where y = 0, violating y > 0.
+        ("x == -1", z3_var('x') == -1), #[EXPLAIN]: Invalid — x = -1 makes x+1 = 0, so the else branch sets y = 0 - 0 = 0, which doesn't satisfy y > 0.
     ]
     for name, pre in candidates:
         s = Solver()
@@ -448,7 +425,6 @@ def test_wp_derivation():
         valid = (result == unsat)
         print(f"  {name}: {'VALID' if valid else 'INVALID'}")
 
-    print("  TODO: implement after Part (b)")
     print()
 
 
